@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Acceleramator</title>
+    <script type="text/javascript" src="vendor/smoothie.js"></script>
+    <script type="text/javascript" src="vendor/reconnecting-websocket.min.js"></script>
+    <script type="text/javascript">
+
+      var xts = new TimeSeries();
+      var yts = new TimeSeries();
+      var zts = new TimeSeries();
+      
+      var samples = 0;
+      var lastTs = 0;
+
+      function createTimeline() {
+        var chart = new SmoothieChart({
+          interpolation:'bezier',
+          minValue:-1.5,
+          maxValue:1.5,
+          millisPerPixel:3
+        });
+        chart.addTimeSeries(xts, { 
+            strokeStyle: 'rgba(0, 161, 214, 0.8)',
+            lineWidth: 3 });
+        chart.addTimeSeries(yts, { 
+            strokeStyle: 'rgba(0, 214, 160, 0.8)',
+            lineWidth: 3 });
+        chart.addTimeSeries(zts, { 
+            strokeStyle: 'rgba(216, 30, 91, 0.8)',
+            lineWidth: 3 });
+        chart.streamTo(document.getElementById("chart"), 0);
+      }
+
+      var ws = new ReconnectingWebSocket('ws://beaglebone.local:5555/');
+      ws.onopen = function() {
+        document.body.style.backgroundColor = '#cfc';
+      };
+      ws.onclose = function() {
+        document.body.style.backgroundColor = null;
+      };
+      ws.onmessage = function(event) {
+        var data = event.data.split(",");
+        var timestamp = parseFloat(data[0]);
+        var axes = data[1];
+        var value = parseFloat(data[2]);
+        
+        if (axes == "x") {
+          xts.append(timestamp, value);
+          samples++;
+          if (timestamp - lastTs > 1000) {
+            document.getElementById('samples').innerHTML = samples;
+            samples = 0;
+            lastTs = timestamp;
+          }
+        } else if (axes =="y") {
+          yts.append(timestamp, value);
+        } else if (axes == "z") {
+          zts.append(timestamp, value-1);
+        }
+
+      };
+
+    </script>
+  </head>
+  <body onload="createTimeline()">
+    <h2>Accelerometer on the Beaglebone Black</h2>
+    <canvas id="chart" width="800" height="400"></canvas>
+    <p>Samples: <span id="samples">0</span> per second</p>
+  </body>
+</html>
