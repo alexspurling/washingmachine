@@ -14,7 +14,7 @@ i2c=mraa.I2c(2, True)
 i2c.address(0x19)
 
 #Turn the accelometer on
-#Turn on the sensor and set the polling frequency to 25Hz
+#Turn on the sensor and set the polling frequency to 50Hz
 i2c.writeReg(0x20, 0x57)
 
 #CTRL_REG4
@@ -25,6 +25,31 @@ i2c.writeReg(0x20, 0x57)
 #00 - ST1-ST0: Self test. Disabled
 #0 - SIM: SPI serial interface mode. Default is 0.
 i2c.writeReg(0x23, 0x88)
+
+K, n, Ex, Ex2 = 0
+values = []
+
+def add_variable(x):
+    global n, K, Ex, Ex2
+    if n == 0:
+      K = x
+    n = n + 1
+    Ex += x - K
+    Ex2 += (x - K) * (x - K)
+
+def remove_variable(x):
+    global n, Ex, Ex2
+    n = n - 1
+    Ex -= (x - K)
+    Ex2 -= (x - K) * (x - K)
+
+def get_meanvalue():
+    return K + Ex / n
+
+def get_variance():
+    if n > 1:
+      return (Ex2 - (Ex*Ex)/n) / (n-1)
+    return 0
 
 def readReg16(address):
   low = i2c.readReg(address)
@@ -55,11 +80,14 @@ while True:
   z = int16ToFloat(zint)
   
   total = math.sqrt(x**2 + y**2 + z**2)
-  
-  n = datetime.datetime.now()
+ 
+  add_variable(total)
+  values.append(total)
+  if len(values) > 50:
+    remove_variable(values.pop(0))  
+  variance = math.sqrt(get_variance())
+
   timestamp = int(round(time.time() * 1000))
-  print "{},{},{}".format(timestamp, "x", x)
-  print "{},{},{}".format(timestamp, "y", y)
-  print "{},{},{}".format(timestamp, "z", z)
+  print "{},{},{},{},{},{}".format(timestamp, x, y, z, total, variance)
   sys.stdout.flush()
-  time.sleep(0.010)
+  time.sleep(0.015)
