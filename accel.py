@@ -4,6 +4,7 @@ import math
 import urllib2
 import datetime
 import sys
+import variance
 
 REG_X=0x28
 REG_Y=0x2A
@@ -26,31 +27,6 @@ i2c.writeReg(0x20, 0x57)
 #0 - SIM: SPI serial interface mode. Default is 0.
 i2c.writeReg(0x23, 0x88)
 
-K, n, Ex, Ex2 = 0
-values = []
-
-def add_variable(x):
-    global n, K, Ex, Ex2
-    if n == 0:
-      K = x
-    n = n + 1
-    Ex += x - K
-    Ex2 += (x - K) * (x - K)
-
-def remove_variable(x):
-    global n, Ex, Ex2
-    n = n - 1
-    Ex -= (x - K)
-    Ex2 -= (x - K) * (x - K)
-
-def get_meanvalue():
-    return K + Ex / n
-
-def get_variance():
-    if n > 1:
-      return (Ex2 - (Ex*Ex)/n) / (n-1)
-    return 0
-
 def readReg16(address):
   low = i2c.readReg(address)
   high = i2c.readReg(address+1)
@@ -70,6 +46,13 @@ def int16ToFloat(i):
 def blink(pin, value):
   urllib2.urlopen("http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/update/" + pin + "?value=" + str(value)).read()
 
+#Number of samples over which to calculate the variance
+#50 samples represents about 1 second of data
+numSamples = 50
+varx = variance.Variance(numSamples)
+vary = variance.Variance(numSamples)
+varz = variance.Variance(numSamples)
+
 while True:
   xint = readReg16(REG_X)
   yint = readReg16(REG_Y)
@@ -81,11 +64,11 @@ while True:
   
   total = math.sqrt(x**2 + y**2 + z**2)
  
-  add_variable(total)
-  values.append(total)
-  if len(values) > 50:
-    remove_variable(values.pop(0))  
-  variance = math.sqrt(get_variance())
+  varx.add_variable(x)
+  vary.add_variable(y)
+  varz.add_variable(z)
+
+  variance = (math.sqrt(varx.get_variance()) + math.sqrt(vary.get_variance()) + math.sqrt(varz.get_variance())) / 3
 
   timestamp = int(round(time.time() * 1000))
   print "{},{},{},{},{},{}".format(timestamp, x, y, z, total, variance)

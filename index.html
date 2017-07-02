@@ -18,9 +18,9 @@
       function createTimeline() {
         var chart = new SmoothieChart({
           interpolation:'bezier',
-          minValue:-0.2,
-          maxValue:0.2,
-          millisPerPixel:5
+          minValue:-1.0,
+          maxValue:1.0,
+          millisPerPixel:10
         });
         chart.addTimeSeries(xts, { 
             strokeStyle: 'rgba(0, 161, 214, 0.8)',
@@ -67,6 +67,11 @@
           document.getElementById('variance').innerHTML = variance;
           samples = 0;
           lastTs = timestamp;
+        }
+        if (variance > 0.01) {
+          document.body.style.backgroundColor = '#fcc';
+        } else {
+          document.body.style.backgroundColor = '#cfc';
         }
 
       };
