@@ -5,6 +5,7 @@ import urllib2
 import datetime
 import sys
 import variance
+import median 
 
 REG_X=0x28
 REG_Y=0x2A
@@ -52,6 +53,9 @@ numSamples = 50
 varx = variance.Variance(numSamples)
 vary = variance.Variance(numSamples)
 varz = variance.Variance(numSamples)
+medx = median.Median(3)
+medy = median.Median(3)
+medz = median.Median(3)
 
 while True:
   xint = readReg16(REG_X)
@@ -63,14 +67,19 @@ while True:
   z = int16ToFloat(zint)
   
   total = math.sqrt(x**2 + y**2 + z**2)
- 
-  varx.add_variable(x)
-  vary.add_variable(y)
-  varz.add_variable(z)
 
-  variance = (math.sqrt(varx.get_variance()) + math.sqrt(vary.get_variance()) + math.sqrt(varz.get_variance())) / 3
+  medx.add_variable(x)
+  medy.add_variable(y)
+  medz.add_variable(z)
+ 
+  varx.add_variable(medx.get_median())
+  vary.add_variable(medy.get_median())
+  varz.add_variable(medz.get_median())
+
+  v = max(varx.get_max(), vary.get_max(), varz.get_max())
 
   timestamp = int(round(time.time() * 1000))
-  print "{},{},{},{},{},{}".format(timestamp, x, y, z, total, variance)
+  print "{},{},{},{},{},{}".format(timestamp, x, y, z, total, v)
   sys.stdout.flush()
   time.sleep(0.015)
+

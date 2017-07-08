@@ -26,6 +26,9 @@ class Variance(object):
   def get_meanvalue(self):
     return self.K + self.Ex / self.n
 
+  def get_max(self):
+    return max(self.values) - min(self.values)
+
   def get_variance(self):
     if self.n > 1:
       return (self.Ex2 - (self.Ex*self.Ex)/self.n) / (self.n-1)
