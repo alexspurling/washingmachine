@@ -55,6 +55,7 @@
         var z = parseFloat(data[3]);
         var total = parseFloat(data[4]);
         var variance = parseFloat(data[5]);
+        var vibrations = data[6];
         
         xts.append(timestamp, x);
         yts.append(timestamp, y);
@@ -65,10 +66,11 @@
         if (timestamp - lastTs > 1000) {
           document.getElementById('samples').innerHTML = samples;
           document.getElementById('variance').innerHTML = variance;
+          document.getElementById('vibrations').innerHTML = vibrations;
           samples = 0;
           lastTs = timestamp;
         }
-        if (variance > 0.03) {
+        if (variance > 0.05) {
           document.body.style.backgroundColor = '#fcc';
         } else {
           document.body.style.backgroundColor = '#cfc';
@@ -83,6 +85,7 @@
     <canvas id="chart" width="800" height="400"></canvas>
     <p>
       Samples: <span id="samples">0</span> per second<br>
-      Variance: <span id="variance">0</span></p>
+      Variance: <span id="variance">0</span><br>
+      Vibrations: <span id="vibrations">0</span></p>
   </body>
 </html>

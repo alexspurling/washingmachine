@@ -57,6 +57,9 @@ medx = median.Median(3)
 medy = median.Median(3)
 medz = median.Median(3)
 
+vibrations = 0
+machineon = False
+
 while True:
   xint = readReg16(REG_X)
   yint = readReg16(REG_Y)
@@ -78,8 +81,19 @@ while True:
 
   v = max(varx.get_max(), vary.get_max(), varz.get_max())
 
+  if v > 0.05:
+    vibrations = vibrations + 1
+  elif vibrations > 0:
+    vibrations = vibrations - 1
+
+  #has been vibrating for about 50s in the last 60s
+  if vibrations > 1600:
+    machineon = True
+  else:
+    machineon = False
+
   timestamp = int(round(time.time() * 1000))
-  print "{},{},{},{},{},{}".format(timestamp, x, y, z, total, v)
+  print "{},{},{},{},{},{},{},{}".format(timestamp, x, y, z, total, v, vibrations, machineon)
   sys.stdout.flush()
   time.sleep(0.015)
 
