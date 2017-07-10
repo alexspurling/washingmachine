@@ -1,5 +1,6 @@
 import Adafruit_BBIO.ADC as ADC
 import time
+import sys
 
 ADC.setup()
 from time import sleep
@@ -14,5 +15,5 @@ while(1):
   b = v / (1.667 / 1.8)
   timestamp = int(round(time.time() * 1000))
   print "{},{},{}".format(timestamp, v, b)
-
+  sys.stdout.flush()
   sleep(2)
