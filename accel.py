@@ -46,12 +46,17 @@ def int16ToFloat(i):
   return float(sint) / 16000
 
 def notify(msg):
-    data = {'body': msg}
+  data = {'body': msg}
+  req = urllib2.Request('http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/notify')
+  req.add_header('Content-Type', 'application/json')
 
-    req = urllib2.Request('http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/notify')
-    req.add_header('Content-Type', 'application/json')
+  urllib2.urlopen(req, json.dumps(data))
 
-    urllib2.urlopen(req, json.dumps(data))
+def push(pin, value):
+  req = urllib2.Request('http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/update/V' + str(pin))
+  req.add_header('Content-Type', 'application/json')
+  req.get_method = lambda: 'PUT'
+  urllib2.urlopen(req, "[" + str(value) + "]")
 
 #Number of samples over which to calculate the variance
 #50 samples represents about 1 second of data
@@ -65,6 +70,7 @@ medz = median.Median(3)
 
 vibrations = 0
 machineon = 0
+lastpush = 0
 vibrationthreshold = 0.05
 lastwakeup = int(round(time.time() * 1000))
 sleeptime = 180 * 1000
@@ -113,6 +119,10 @@ while True:
     print "0,0,0,0,0,0,0,Washing done at {}".format(timestamp)
     dt = datetime.datetime.fromtimestamp(timestamp / 1000)
     notify("Washing done at {}".format(dt))
+  elif vibrations > 0 and timestamp - lastpush >= 1000:
+    #Send vibration count to graph with Blynk
+    push(1, vibrations)
+    lastpush = timestamp
 
   #Micro sleep as long as there is vibration or we are in our 5 second wake period
   if vibrations > stayawakethreshold or timestamp - lastwakeup < waketime:
