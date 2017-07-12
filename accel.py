@@ -1,6 +1,7 @@
 import mraa
 import time
 import math
+import json
 import urllib2
 import datetime
 import sys
@@ -44,8 +45,13 @@ def int16ToFloat(i):
   sint = uint16ToInt(i)
   return float(sint) / 16000
 
-def blink(pin, value):
-  urllib2.urlopen("http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/update/" + pin + "?value=" + str(value)).read()
+def notify(msg):
+    data = {'body': msg}
+
+    req = urllib2.Request('http://blynk-cloud.com/b3e42dd400e84c5586f122328b83616f/notify')
+    req.add_header('Content-Type', 'application/json')
+
+    urllib2.urlopen(req, json.dumps(data))
 
 #Number of samples over which to calculate the variance
 #50 samples represents about 1 second of data
@@ -58,7 +64,13 @@ medy = median.Median(3)
 medz = median.Median(3)
 
 vibrations = 0
-machineon = False
+machineon = 0
+lastwakeup = int(round(time.time() * 1000))
+sleeptime = 180 * 1000
+waketime = 5 * 1000
+machineoffdelay = 15 * 60 * 1000
+stayawakethreshold = 100
+machineonthreshold = 6000
 
 while True:
   xint = readReg16(REG_X)
@@ -82,18 +94,30 @@ while True:
   v = max(varx.get_max(), vary.get_max(), varz.get_max())
 
   if v > 0.05:
-    vibrations = vibrations + 1
+    vibrations += 1
   elif vibrations > 0:
-    vibrations = vibrations - 1
-
-  #has been vibrating for about 50s in the last 60s
-  if vibrations > 1600:
-    machineon = True
-  else:
-    machineon = False
+    vibrations -= 1
 
   timestamp = int(round(time.time() * 1000))
-  print "{},{},{},{},{},{},{},{}".format(timestamp, x, y, z, total, v, vibrations, machineon)
+  print "{},{},{},{},{},{},{}".format(timestamp, x, y, z, total, v, vibrations)
   sys.stdout.flush()
-  time.sleep(0.015)
+
+  if vibrations > machineonthreshold:
+    machineon = timestamp
+
+  #If all vibrations have stopped, and the machine was on at least 15 mins ago
+  #then notify
+  if vibrations == 0 and machineon > 0 and timestamp - machineon > machineoffdelay:
+    machineon = 0
+    print "0,0,0,0,0,0,0,Washing done at {}".format(timestamp)
+    dt = datetime.datetime.fromtimestamp(timestamp / 1000)
+    notify("Washing done at {}".format(dt))
+
+  #Micro sleep as long as there is vibration or we are in our 5 second wake period
+  if vibrations > stayawakethreshold or timestamp - lastwakeup < waketime:
+    time.sleep(0.015)
+  else:
+    #Otherwise sleep for a couple of minutes
+    time.sleep(sleeptime / 1000.0)
+    lastwakeup = int(round(time.time() * 1000))
 
