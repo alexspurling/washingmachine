@@ -65,12 +65,13 @@ medz = median.Median(3)
 
 vibrations = 0
 machineon = 0
+vibrationthreshold = 0.05
 lastwakeup = int(round(time.time() * 1000))
 sleeptime = 180 * 1000
 waketime = 5 * 1000
-machineoffdelay = 15 * 60 * 1000
-stayawakethreshold = 100
-machineonthreshold = 6000
+machineoffdelay = 10 * 60 * 1000
+stayawakethreshold = 50
+machineonthreshold = 5000
 
 while True:
   xint = readReg16(REG_X)
@@ -93,7 +94,7 @@ while True:
 
   v = max(varx.get_max(), vary.get_max(), varz.get_max())
 
-  if v > 0.05:
+  if v > vibrationthreshold:
     vibrations += 1
   elif vibrations > 0:
     vibrations -= 1
