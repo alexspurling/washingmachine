@@ -25,15 +25,30 @@ int intPin = 25;
 #define REG_Y 0x2A
 #define REG_Z 0x2C
 
+#define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP  10      /* Time ESP32 will go to sleep (in seconds) */
+#define AWAKE_TIME 15000
+
+RTC_DATA_ATTR int bootCount = 0;
+unsigned long bootTime = 0;
 
 void setup()
 {
-  pinMode(ledPin, OUTPUT);
   Serial.begin(115200);
+  delay(100);
+  
+  //Increment boot number and print it every reboot
+  ++bootCount;
+  Serial.println("Boot number: " + String(bootCount));
+
+  //Print the wakeup reason for ESP32
+  print_wakeup_reason();
+  
+  pinMode(ledPin, OUTPUT);
 
   initI2C();
 
-  writeReg(CTRL_REG1, 0x47); //Set data rate to 50hz. Enable X, Y and Z high precision modes
+  writeReg(CTRL_REG1, 0x47); //Set data rate to 50hz. Enable X, Y and Z axes
 
   //1 - BDU: Block data update. This ensures that both the high and the low bytes for each 16bit represent the same sample
   //0 - BLE: Big/little endian. Set to little endian
@@ -69,41 +84,92 @@ void setup()
   
   pinMode(intPin, INPUT);
   attachInterrupt(intPin, wakeUp, RISING);
-  
+
+  bootTime = millis();
   Serial.println("Accelerometer enabled");
+
+  //Wake up when pin 25 is high
+  esp_deep_sleep_enable_ext0_wakeup(GPIO_NUM_25, HIGH);
 }
 
 float getAccel(int16_t accel) {
   return float(accel) / 16000;
 }
 
-unsigned long previousMillis = 0;
-const long interval = 1000;
-int ledState = LOW;
+volatile bool machineOn = false;
+volatile unsigned int vibrations = 0;
+
+unsigned int loops = 1;
+int activeLoopInterval = 100;
 
 bool started = false;
 
 void loop()
 {
-  unsigned long currentMillis = millis();
+  if (!started) {
+    started = true;
+    //Reset the interrupt when we are actually ready to receive it
+    readReg(INT1_SRC);
+  }
   
-  if (currentMillis - previousMillis >= interval) {
-    //dataReady();
-
-    //Get ready
-    if (!started) {
-      dataReady();
-      started = true;
+  if (machineOn) {
+    //Flash every 500ms when machine is on
+    if (loops == 1) {
+      digitalWrite(ledPin, HIGH);
+    } else if (loops == (500 / activeLoopInterval)) {
+      digitalWrite(ledPin, LOW);
+    } else if (loops == (1000 / activeLoopInterval)) {
+      loops = 0;
     }
+    loops++;
 
-    // save the last time you blinked the LED
-    previousMillis = currentMillis;
-    if (ledState == LOW) {
-      ledState = HIGH;
+    Serial.print("Vibrations: ");
+    Serial.print(vibrations);
+    Serial.print(", loops: ");
+    Serial.println(loops);
+    
+    if (vibrations > 0) {
+      vibrations--;
     } else {
-      ledState = LOW;
+      machineOn = false;
     }
-    digitalWrite(ledPin, ledState);
+    
+    delay(activeLoopInterval);
+  } else if (millis() - bootTime > AWAKE_TIME) {
+    writeReg(CTRL_REG1, 0x2f); //Set data rate to 1z. Enable X, Y and Z axes in low power mode
+    writeReg(CTRL_REG4, 0x0); //Turn off BDU, turn off high precision mode
+    readReg(HP_FILTER_RESET);
+    readReg(INT1_SRC); //Reset the interrupt so it will trigger when we are asleep
+    
+    Serial.println("Going to sleep now");
+    esp_deep_sleep_start();
+  } else {
+    Serial.println("Idle");
+    dataReady();
+    //Slow flash when idling
+    digitalWrite(ledPin, HIGH);
+    delay(1000);
+    digitalWrite(ledPin, LOW);
+    delay(1000);
+  }
+}
+
+void print_wakeup_reason(){
+  esp_deep_sleep_wakeup_cause_t wakeup_reason;
+
+  wakeup_reason = esp_deep_sleep_get_wakeup_cause();
+
+  switch(wakeup_reason)
+  {
+    case 1  : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case 2  : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case 3  : Serial.println("Wakeup caused by timer"); break;
+    case 4  : Serial.println("Wakeup caused by touchpad"); break;
+    case 5  : Serial.println("Wakeup caused by ULP program"); break;
+    default : 
+      Serial.print("Wakeup was not caused by deep sleep: ");
+      Serial.println(wakeup_reason);  
+      break;
   }
 }
 
@@ -124,9 +190,11 @@ void dataReady() {
 }
 
 void wakeUp() {
-  Serial.println("Wake up!!");
+  machineOn = true;
+  vibrations++;
   readReg(INT1_SRC);
 }
+
 
 
 
