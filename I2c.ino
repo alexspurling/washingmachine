@@ -3,6 +3,8 @@
 void initI2C() {
   Wire.begin(SDA_PIN, SCL_PIN);
   delay(100);
+  Serial.println("Getting ACCEL ID:");
+  Serial.println(readByte(0x0F));
 }
 
 byte readByte(byte reg) {

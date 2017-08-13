@@ -100,7 +100,7 @@ volatile bool machineOn = false;
 volatile unsigned int vibrations = 0;
 
 unsigned int loops = 1;
-int activeLoopInterval = 100;
+int activeLoopInterval = 200; //Loop 5 times a second
 
 bool started = false;
 
@@ -123,10 +123,7 @@ void loop()
     }
     loops++;
 
-    Serial.print("Vibrations: ");
-    Serial.print(vibrations);
-    Serial.print(", loops: ");
-    Serial.println(loops);
+    printAccel(vibrations);
     
     if (vibrations > 0) {
       vibrations--;
@@ -135,17 +132,16 @@ void loop()
     }
     
     delay(activeLoopInterval);
-  } else if (millis() - bootTime > AWAKE_TIME) {
-    writeReg(CTRL_REG1, 0x2f); //Set data rate to 1z. Enable X, Y and Z axes in low power mode
-    writeReg(CTRL_REG4, 0x0); //Turn off BDU, turn off high precision mode
-    readReg(HP_FILTER_RESET);
-    readReg(INT1_SRC); //Reset the interrupt so it will trigger when we are asleep
-    
-    Serial.println("Going to sleep now");
-    esp_deep_sleep_start();
+//  } else if (millis() - bootTime > AWAKE_TIME) {
+//    writeReg(CTRL_REG1, 0x2f); //Set data rate to 1z. Enable X, Y and Z axes in low power mode
+//    writeReg(CTRL_REG4, 0x0); //Turn off BDU, turn off high precision mode
+//    readReg(HP_FILTER_RESET); //Reset the reference state (seems to be necessary when changing the ODR)
+//    readReg(INT1_SRC); //Reset the interrupt so it will trigger when we are asleep
+//    
+//    Serial.println("Going to sleep now");
+//    esp_deep_sleep_start();
   } else {
-    Serial.println("Idle");
-    dataReady();
+    printAccel(vibrations);
     //Slow flash when idling
     digitalWrite(ledPin, HIGH);
     delay(1000);
@@ -173,7 +169,7 @@ void print_wakeup_reason(){
   }
 }
 
-void dataReady() {
+void printAccel(int vibrations) {
   float x = getAccel(readReg(REG_X));
   float y = getAccel(readReg(REG_Y));
   float z = getAccel(readReg(REG_Z));
@@ -184,7 +180,8 @@ void dataReady() {
   printFloat(y, 3);
   Serial.print(", ");
   printFloat(z, 3);
-  Serial.println();
+  Serial.print(", ");
+  Serial.println(vibrations);
   
   writeReg(INT1_CFG, 0x2a);
 }
