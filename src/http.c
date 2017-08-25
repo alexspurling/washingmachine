@@ -170,6 +170,6 @@ void http_get_task(void *pvParameters)
         printf("... done reading from socket. Last read return=%d errno=%d\n", r, errno);
         close(socket);
 
-        vTaskDelay(15000);
+        break;
     }
 }

@@ -16,7 +16,7 @@
 #define HIGH 1
 
 #define LED_PIN GPIO_NUM_5  //Blue led pin
-#define INT_PIN GPIO_NUM_15 //Interrupt GPIO pin
+#define INT_PIN GPIO_NUM_27 //Interrupt GPIO pin
 
 #define ACCEL 0x19 //I2C device address
 #define CTRL_REG1 0x20 //Data rate selection and X, Y, Z axis enable register
@@ -39,10 +39,11 @@
 #define REG_Z 0x2C
 
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
-#define NOTIFICATION_DELAY 360  /* Sleep for this amount of time after detecting machine on before sending a notification */
+#define NOTIFICATION_DELAY 300  /* Sleep for this amount of time after detecting machine on before sending a notification */
 
 #define ACTIVE_THRESHOLD 240 //Trigger machine on after 4 minutes of vibration
-#define INACTIVE_THRESHOLD 60
+#define INACTIVE_ACTIVE_THRESHOLD 75 //Time to stay awake while inacive and active count is > 0
+#define INACTIVE_THRESHOLD 10 //Time to stay awake while inactive and active count is 0
 
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR bool sendNotification = false;
@@ -61,17 +62,18 @@ void printAccel(int vibrations) {
   fflush(stdout);
 }
 
+void set_sensitivity(uint8_t threshold) {
+    // Threshold as a multiple of 16mg. 4 * 16 = 64mg
+    write_reg(INT1_THS, threshold);
+}
+
 void init_accelerometer()
 {
 
-  printf("Initing accel\n");
+  printf("Initialising accelerometer\n");
 
   init_i2c_device();
 
-  vTaskDelay(1000);
-  printAccel(0);
-
-  printf("CTRL_REG1\n");
   write_reg(CTRL_REG1, 0x47); //Set data rate to 50hz. Enable X, Y and Z axes
 
   //1 - BDU: Block data update. This ensures that both the high and the low bytes for each 16bit represent the same sample
@@ -79,51 +81,40 @@ void init_accelerometer()
   //00 - FS1-FS0: Full scale selection. 00 represents +-2g
   //1 - HR: High resolution mode enabled.
   //00 - ST1-ST0: Self test. Disabled
-  //0 - SIM: SPI serial interface mode. Default is 0.
-  printf("CTRL_REG4\n");
+  //0 - SIM: SPI serial interface mode. Default is 0
   write_reg(CTRL_REG4, 0x88);
 
   // 2 Write 09h into CTRL_REG2 // High-pass filter enabled on data and interrupt1
-  printf("CTRL_REG2\n");
   write_reg(CTRL_REG2, 0x09);
 
   //3 Write 40h into CTRL_REG3 // Interrupt driven to INT1 pad
-  printf("CTRL_REG3\n");
   write_reg(CTRL_REG3, 0x40);
 
   //4 Write 00h into CTRL_REG4 // FS = 2 g
   //5 Write 08h into CTRL_REG5 // Interrupt latched
-  printf("CTRL_REG5\n");
   write_reg(CTRL_REG5, 0x08);
 
   // Threshold as a multiple of 16mg. 4 * 16 = 64mg
-  printf("INT1_THS\n");
-  write_reg(INT1_THS, 0x06);
+  set_sensitivity(0x04);
 
   // Duration = 0 not quite sure what this does yet
-  printf("INT1_DURATION\n");
   write_reg(INT1_DURATION, 0x00);
 
   // Read the reference register to set the reference acceleration values against which
   // we compare current values for interrupt generation
   // 8 Read HP_FILTER_RESET
-  printf("HP_FILTER_RESET\n");
   read_reg(HP_FILTER_RESET);
 
   // 9 Write 2Ah into INT1_CFG // Configure interrupt when any of the X, Y or Z axes exceeds (rather than stay below) the threshold
-  printf("INT1_CFG\n");
   write_reg(INT1_CFG, 0x2a);
-
-  vTaskDelay(1000);
-  printAccel(0);
 }
 
 void blink_task(void *pvParameter)
 {
   while (1) {
-    gpio_set_level(LED_PIN, HIGH);
-    vTaskDelay(100);
     gpio_set_level(LED_PIN, LOW);
+    vTaskDelay(100);
+    gpio_set_level(LED_PIN, HIGH);
     vTaskDelay(blink_delay * 2);
   }
 }
@@ -171,7 +162,7 @@ void check_vibrations(void *pvParameter)
         printf("MACHINE ON! Sleeping before sending notification.\n");
         fflush(stdout);
         sendNotification = true;
-        //Wait for 6 minutes and then send a notification?
+        //Wait for 5 minutes and then send a notification
         esp_deep_sleep_enable_timer_wakeup(NOTIFICATION_DELAY * uS_TO_S_FACTOR);
         esp_deep_sleep_start();
       }
@@ -182,8 +173,11 @@ void check_vibrations(void *pvParameter)
         time_active--;
       }
       printf("Inactive. A: %d, IA: %d\n", time_active, time_inactive);
-      if (time_inactive == INACTIVE_THRESHOLD) {
-        printf("MACHINE OFF! Sleeping until next interrupt.\n");
+      if ((time_active == 0 && time_inactive >= INACTIVE_THRESHOLD) ||
+          (time_active > 0 && time_inactive >= INACTIVE_ACTIVE_THRESHOLD)) {
+        printf("Reducing vibration sensitivity\n");
+        set_sensitivity(0x06);
+        printf("Machine off. Sleeping until next interrupt.\n");
         fflush(stdout);
         //No activity seen for a few seconds. Enable deep sleep with interrupt trigger
         esp_deep_sleep_enable_ext0_wakeup(INT_PIN, HIGH);
@@ -230,7 +224,6 @@ void app_main()
   //Print the wakeup reason for ESP32
   print_wakeup_reason();
 
-  sendNotification = true;
   if (sendNotification) {
     printf("Turning on wifi\n");
     initialise_wifi();
@@ -245,6 +238,5 @@ void app_main()
     xTaskCreate(&blink_task, "blink_task", 2048, NULL, 5, NULL);
     xTaskCreate(&check_vibrations, "check_vibrations", 2048, NULL, 5, NULL);
     // xTaskCreate(&sleep, "sleep", 2048, NULL, 5, NULL);
-    // xTaskCreate(&interrupt_task, "interrupt_task", 2048, NULL, 5, NULL);
   }
 }
