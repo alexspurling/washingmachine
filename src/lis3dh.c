@@ -16,8 +16,8 @@
 #define REG_Y 0x2A
 #define REG_Z 0x2C
 
-#define I2C_MASTER_SCL_IO  GPIO_NUM_21 /*!< gpio number for I2C master clock */
-#define I2C_MASTER_SDA_IO  GPIO_NUM_22 /*!< gpio number for I2C master data  */
+#define I2C_MASTER_SCL_IO  GPIO_NUM_22 /*!< gpio number for I2C master clock */
+#define I2C_MASTER_SDA_IO  GPIO_NUM_21 /*!< gpio number for I2C master data  */
 #define I2C_MASTER_NUM  I2C_NUM_0      /*!< I2C port number for master dev */
 #define I2C_MASTER_TX_BUF_DISABLE  0   /*!< I2C master do not need buffer */
 #define I2C_MASTER_RX_BUF_DISABLE  0   /*!< I2C master do not need buffer */

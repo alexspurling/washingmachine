@@ -14,6 +14,8 @@
 #include "esp_wifi.h"
 #include "esp_event_loop.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+#include "driver/adc.h"
 #include "nvs_flash.h"
 #include "ssid.h"
 
@@ -22,6 +24,9 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
+
+#define LOW 0
+#define HIGH 1
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
@@ -36,13 +41,21 @@ const int CONNECTED_BIT = BIT0;
 
 static const char *TAG = "wifi";
 
+#define HIGH 1
+#define INT_PIN GPIO_NUM_32 //Interrupt GPIO pin
+#define BATTERY_EN_PIN GPIO_NUM_14 //GPIO pin to enable battery level monitor
+
+float battery = 0.0;
+
+static const char *POST_BODY = "{\"body\":\"Washing done. Battery: %.2f%%\"}";
+
 static const char *POST_REQUEST = "POST /b3e42dd400e84c5586f122328b83616f/notify HTTP/1.0\r\n"
     "Host: "WEB_SERVER_2"\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
     "Content-Type: application/json\r\n"
-    "Content-Length: 26\r\n"
+    "Content-Length: %d\r\n"
     "\r\n"
-    "{\"body\":\"Washing is done\"}";
+    "%s";
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -65,8 +78,42 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
+float adc1_get_value(adc1_channel_t adc_channel) {
+    float adc_values[3] = {};
+
+    for (int i = 0; i < 3; i++) {
+        vTaskDelay(10);
+        adc_values[i] = adc1_get_voltage(adc_channel);
+    }
+
+    return (adc_values[0] + adc_values[1] + adc_values[2]) / 3.0;
+}
+
+float battery_percentage() {
+    //Required for battery monitoring
+    adc1_config_width(ADC_WIDTH_12Bit);
+    // adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_11db);
+    gpio_set_direction(BATTERY_EN_PIN, GPIO_MODE_OUTPUT);
+    //We have to enable pin 14 to turn on the voltage divider
+    //This saves power when we are sleeping
+    gpio_set_level(BATTERY_EN_PIN, HIGH);
+    float adc_value = adc1_get_value(ADC1_CHANNEL_7);
+    gpio_set_level(BATTERY_EN_PIN, LOW);
+    float adc_voltage = adc_value * 3.3 / 4095;
+    //voltage divider uses 100k / 330k ohm resistors
+    //4.3V -> 3.223, 2.4 -> 1.842
+    float expected_max = 4.3*330/(100+330);
+    float expected_min = 2.4*330/(100+330);
+    float battery_level = (adc_voltage-expected_min)/(expected_max-expected_min);
+    // float battery_voltage = adc_voltage * 2;
+    return battery_level * 100.0;
+}
+
 void initialise_wifi(void)
 {
+    battery = battery_percentage();
+    printf("Got battery percentage %.2f\n", battery);
+
     tcpip_adapter_init();
     wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK( esp_event_loop_init(event_handler, NULL) );
@@ -147,7 +194,18 @@ void http_get_task(void *pvParameters)
         printf("... connected\n");
         freeaddrinfo(res);
 
-        if (write(socket, POST_REQUEST, strlen(POST_REQUEST)) < 0) {
+
+        char *post_body;
+        asprintf(&post_body, POST_BODY, battery);
+
+        char *post_request;
+        asprintf(&post_request, POST_REQUEST, strlen(post_body), post_body);
+
+        printf("Sending POST request:\n");
+        printf(post_request);
+        printf("\n");
+
+        if (write(socket, post_request, strlen(post_request)) < 0) {
             ESP_LOGE(TAG, "... socket send failed");
             printf("... socket send failed\n");
             close(socket);
@@ -170,6 +228,9 @@ void http_get_task(void *pvParameters)
         printf("... done reading from socket. Last read return=%d errno=%d\n", r, errno);
         close(socket);
 
+        // Sleep with interrupt trigger
+        esp_deep_sleep_enable_ext0_wakeup(INT_PIN, HIGH);
+        esp_deep_sleep_start();
         break;
     }
 }

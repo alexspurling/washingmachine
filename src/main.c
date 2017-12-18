@@ -8,15 +8,14 @@
 #include "esp_event_loop.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
-#include "driver/adc.h"
 #include "lis3dh.h"
 #include "http.h"
 
 #define LOW 0
 #define HIGH 1
 
-#define LED_PIN GPIO_NUM_5  //Blue led pin
-#define INT_PIN GPIO_NUM_27 //Interrupt GPIO pin
+#define LED_PIN GPIO_NUM_23  //Blue led pin
+#define INT_PIN GPIO_NUM_32 //Interrupt GPIO pin
 
 #define ACCEL 0x19 //I2C device address
 #define CTRL_REG1 0x20 //Data rate selection and X, Y, Z axis enable register
@@ -112,18 +111,12 @@ void init_accelerometer()
 void blink_task(void *pvParameter)
 {
   while (1) {
-    gpio_set_level(LED_PIN, LOW);
-    vTaskDelay(100);
     gpio_set_level(LED_PIN, HIGH);
-    vTaskDelay(blink_delay * 2);
+    vTaskDelay(50);
+    gpio_set_level(LED_PIN, LOW);
+    vTaskDelay(950);
+    // vTaskDelay(blink_delay * 2);
   }
-}
-
-float battery_voltage() {
-  int adc_value = adc1_get_voltage(ADC1_CHANNEL_7);
-  float adc_voltage = adc_value * 3.3 / 4096;
-  float battery_voltage = adc_voltage * 2;
-  return battery_voltage;
 }
 
 void sleep(void *args) {
@@ -230,9 +223,6 @@ void app_main()
     xTaskCreate(&http_get_task, "http_get_task", 8192, NULL, 5, NULL);
     sendNotification = false;
   } else {
-    //Required for battery monitoring
-    // adc1_config_width(ADC_WIDTH_12Bit);
-    // adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_11db);
 
     //TODO reduce stack size of blink task
     xTaskCreate(&blink_task, "blink_task", 2048, NULL, 5, NULL);
