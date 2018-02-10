@@ -94,7 +94,7 @@ void init_accelerometer()
   write_reg(CTRL_REG5, 0x08);
 
   // Threshold as a multiple of 16mg. 4 * 16 = 64mg
-  set_sensitivity(0x04);
+  set_sensitivity(0x06);
 
   // Duration = 0 not quite sure what this does yet
   write_reg(INT1_DURATION, 0x00);
@@ -169,7 +169,7 @@ void check_vibrations(void *pvParameter)
       if ((time_active == 0 && time_inactive >= INACTIVE_THRESHOLD) ||
           (time_active > 0 && time_inactive >= INACTIVE_ACTIVE_THRESHOLD)) {
         printf("Reducing vibration sensitivity\n");
-        set_sensitivity(0x06);
+        set_sensitivity(0x08);
         printf("Machine off. Sleeping until next interrupt.\n");
         fflush(stdout);
         //No activity seen for a few seconds. Enable deep sleep with interrupt trigger

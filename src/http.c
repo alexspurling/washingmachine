@@ -103,7 +103,7 @@ float battery_percentage() {
     //voltage divider uses 100k / 330k ohm resistors
     //4.3V -> 3.223, 2.4 -> 1.842
     float expected_max = 4.3*330/(100+330);
-    float expected_min = 2.4*330/(100+330);
+    float expected_min = 2.8*330/(100+330);
     float battery_level = (adc_voltage-expected_min)/(expected_max-expected_min);
     // float battery_voltage = adc_voltage * 2;
     return battery_level * 100.0;
