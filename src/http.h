@@ -1,4 +1,4 @@
 
-void http_get_task(void *pvParameters);
+void http_get_task();
 
-void initialise_wifi(void);
+void initialise_wifi();

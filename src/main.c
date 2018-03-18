@@ -41,22 +41,22 @@
 #define NOTIFICATION_DELAY 300  /* Sleep for this amount of time after detecting machine on before sending a notification */
 
 #define ACTIVE_THRESHOLD 240 //Trigger machine on after 4 minutes of vibration
-#define INACTIVE_ACTIVE_THRESHOLD 75 //Time to stay awake while inacive and active count is > 0
+#define INACTIVE_ACTIVE_THRESHOLD 75 //Time to stay awake while inactive and active count is > 0
 #define INACTIVE_THRESHOLD 10 //Time to stay awake while inactive and active count is 0
 
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR bool sendNotification = false;
 
-volatile unsigned short blink_delay = 1000;
+volatile bool active = true;
 
 float getAccel(int16_t accel) {
   return (float)accel / 16000;
 }
 
-void printAccel(int vibrations) {
+void printAccel() {
   accel_values accel = read_acceleration();
 
-  printf("Read: %f, %f, %f, %d\n", getAccel(accel.x), getAccel(accel.y), getAccel(accel.z), vibrations);
+  printf("Read: %f, %f, %f\n", getAccel(accel.x), getAccel(accel.y), getAccel(accel.z));
 
   fflush(stdout);
 }
@@ -94,7 +94,7 @@ void init_accelerometer()
   write_reg(CTRL_REG5, 0x08);
 
   // Threshold as a multiple of 16mg. 4 * 16 = 64mg
-  set_sensitivity(0x06);
+  set_sensitivity(0x05);
 
   // Duration = 0 not quite sure what this does yet
   write_reg(INT1_DURATION, 0x00);
@@ -106,6 +106,8 @@ void init_accelerometer()
 
   // 9 Write 2Ah into INT1_CFG // Configure interrupt when any of the X, Y or Z axes exceeds (rather than stay below) the threshold
   write_reg(INT1_CFG, 0x2a);
+
+  printf("Accelerometer enabled\n");
 }
 
 void blink_task(void *pvParameter)
@@ -114,7 +116,13 @@ void blink_task(void *pvParameter)
     gpio_set_level(LED_PIN, HIGH);
     vTaskDelay(50);
     gpio_set_level(LED_PIN, LOW);
-    vTaskDelay(950);
+    if (sendNotification) {
+      vTaskDelay(250);
+    } else if (active) {
+      vTaskDelay(950);
+    } else {
+      vTaskDelay(1950);
+    }
     // vTaskDelay(blink_delay * 2);
   }
 }
@@ -132,9 +140,9 @@ void sleep(void *args) {
 
 void check_vibrations(void *pvParameter)
 {
-  init_accelerometer();
+  // init_accelerometer();
 
-  printf("Accelerometer enabled\n");
+  // printf("Accelerometer enabled\n");
 
   unsigned int time_active = 0;
   unsigned int time_inactive = 0;
@@ -143,6 +151,7 @@ void check_vibrations(void *pvParameter)
     //the 7th bit is the IA or "interrupt active" bit
     if (interrupt_src & 0x40) {
       time_active++;
+      active = true;
 
       if (time_inactive > 10) {
         time_inactive -= 5;
@@ -161,6 +170,8 @@ void check_vibrations(void *pvParameter)
       }
     } else {
       time_inactive++;
+      active = false;
+
       //Decrease the time active so we account for quiet periods
       if (time_active > 0) {
         time_active--;
@@ -169,7 +180,7 @@ void check_vibrations(void *pvParameter)
       if ((time_active == 0 && time_inactive >= INACTIVE_THRESHOLD) ||
           (time_active > 0 && time_inactive >= INACTIVE_ACTIVE_THRESHOLD)) {
         printf("Reducing vibration sensitivity\n");
-        set_sensitivity(0x08);
+        set_sensitivity(0x06);
         printf("Machine off. Sleeping until next interrupt.\n");
         fflush(stdout);
         //No activity seen for a few seconds. Enable deep sleep with interrupt trigger
@@ -202,10 +213,22 @@ void print_wakeup_reason(){
   fflush(stdout);
 }
 
+void send_http_notification(void *pvParameters) {
+  initialise_wifi();
+  http_get_task();
+
+  printf("Wifi message sent. Sleeping.\n");
+  sendNotification = false;
+
+  // Need to reset the interrupt before sleeping
+  uint8_t interrupt_src = read_reg(INT1_SRC);
+  esp_deep_sleep_enable_ext0_wakeup(INT_PIN, HIGH);
+  esp_deep_sleep_start();
+}
+
 static const char *TAG = "washing";
 
-void app_main()
-{
+void app_main() {
   nvs_flash_init();
 
   //Increment boot number and print it every reboot
@@ -217,13 +240,15 @@ void app_main()
   //Print the wakeup reason for ESP32
   print_wakeup_reason();
 
+  init_accelerometer();
+
+  sendNotification = true;
+
   if (sendNotification) {
     printf("Turning on wifi\n");
-    initialise_wifi();
-    xTaskCreate(&http_get_task, "http_get_task", 8192, NULL, 5, NULL);
-    sendNotification = false;
+    xTaskCreate(&blink_task, "blink_task", 2048, NULL, 5, NULL);
+    xTaskCreate(&send_http_notification, "send_http_notification", 8192, NULL, 5, NULL);
   } else {
-
     //TODO reduce stack size of blink task
     xTaskCreate(&blink_task, "blink_task", 2048, NULL, 5, NULL);
     xTaskCreate(&check_vibrations, "check_vibrations", 2048, NULL, 5, NULL);

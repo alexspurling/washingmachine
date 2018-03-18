@@ -16,7 +16,6 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/adc.h"
-#include "nvs_flash.h"
 #include "ssid.h"
 
 #include "lwip/err.h"
@@ -86,6 +85,10 @@ float adc1_get_value(adc1_channel_t adc_channel) {
         adc_values[i] = adc1_get_voltage(adc_channel);
     }
 
+    printf("ADC1: %f\n", adc_values[0]);
+    printf("ADC2: %f\n", adc_values[1]);
+    printf("ADC3: %f\n", adc_values[2]);
+
     return (adc_values[0] + adc_values[1] + adc_values[2]) / 3.0;
 }
 
@@ -100,6 +103,7 @@ float battery_percentage() {
     float adc_value = adc1_get_value(ADC1_CHANNEL_7);
     gpio_set_level(BATTERY_EN_PIN, LOW);
     float adc_voltage = adc_value * 3.3 / 4095;
+    printf("adc_voltage: %f\n", adc_voltage);
     //voltage divider uses 100k / 330k ohm resistors
     //4.3V -> 3.223, 2.4 -> 1.842
     float expected_max = 4.3*330/(100+330);
@@ -109,8 +113,9 @@ float battery_percentage() {
     return battery_level * 100.0;
 }
 
-void initialise_wifi(void)
+void initialise_wifi()
 {
+    vTaskDelay(10000);
     battery = battery_percentage();
     printf("Got battery percentage %.2f\n", battery);
 
@@ -133,7 +138,8 @@ void initialise_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_start() );
 }
 
-void http_get_task(void *pvParameters)
+
+void http_get_task()
 {
     const struct addrinfo hints = {
         .ai_family = AF_INET,
@@ -141,8 +147,7 @@ void http_get_task(void *pvParameters)
     };
     struct addrinfo *res;
     struct in_addr *addr;
-    int socket, r;
-    char recv_buf[64];
+    int socket;
 
     while(1) {
         /* Wait for the callback to set the CONNECTED_BIT in the
@@ -216,21 +221,38 @@ void http_get_task(void *pvParameters)
         printf("... socket send success\n");
 
         /* Read HTTP response */
+        char* response = NULL;
+        char recv_buf[64];
+        int responselen = 0;
+        int r = 0;
+
         do {
             bzero(recv_buf, sizeof(recv_buf));
             r = read(socket, recv_buf, sizeof(recv_buf)-1);
-            for(int i = 0; i < r; i++) {
-                putchar(recv_buf[i]);
+            for (int i = 0; i < 64; i++) {
+              printf("%d\n", recv_buf[i]);
             }
+            responselen += r;
+            response = realloc(response, responselen+1);
+            strcat(response, recv_buf);
         } while(r > 0);
 
+        printf("Response length: %d\n", responselen);
+        printf("Actual length: %d\n", strlen(response));
+        printf("Response: %s\n", response);
+        printf("Find: %d\n", strncmp("HTTP/1.1 200 OK", response, responselen));
+        if (strncmp("HTTP/1.1 200 OK", response, responselen) == 0) {
+            printf("Notification successful");
+        }
+
+        free(response);
+
+        printf("\n");
         ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d\r\n", r, errno);
         printf("... done reading from socket. Last read return=%d errno=%d\n", r, errno);
         close(socket);
 
-        // Sleep with interrupt trigger
-        esp_deep_sleep_enable_ext0_wakeup(INT_PIN, HIGH);
-        esp_deep_sleep_start();
-        break;
+        // Retry
+        vTaskDelay(5000);
     }
 }
